@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mini Bloomberg – Real-Time News Terminal</title>
+<style>
+  :root{
+    --bg:#0b0f13; --panel:#0f151c; --card:#131c26; --muted:#8aa0b3; --text:#e6eef5;
+    --accent:#35c990; --accent2:#57a6ff; --warn:#ffbd4a; --danger:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{display:flex;gap:12px;align-items:center;padding:10px 12px;background:var(--panel);position:sticky;top:0;z-index:10;border-bottom:1px solid #1c2733}
+  header .brand{font-weight:700;letter-spacing:.5px}
+  header .brand small{color:var(--muted);font-weight:500;margin-left:6px}
+  .pill{background:#0b121a;border:1px solid #203042;padding:6px 10px;border-radius:999px;color:var(--muted)}
+  .pill b{color:var(--text)}
+  input, button{border:1px solid #203042;background:#0d141c;color:var(--text);border-radius:8px;padding:8px 10px}
+  input:focus{outline:none;border-color:#2e4b6f;box-shadow:0 0 0 2px #193047 inset}
+  button{cursor:pointer}
+  button.primary{background:linear-gradient(180deg,#1c2b3b,#0f1925);border-color:#2b4058}
+  main{display:grid;grid-template-columns:280px 1fr;gap:12px;padding:12px}
+  .panel{background:var(--panel);border:1px solid #1c2733;border-radius:12px;overflow:hidden}
+  .panel h3{margin:0;padding:10px 12px;border-bottom:1px solid #1c2733;color:#b8c7d6;font-size:13px;letter-spacing:.3px}
+  #feeds, #watchlist{padding:8px 10px;display:grid;gap:8px}
+  .feed{display:flex;align-items:center;gap:8px;justify-content:space-between;background:#0d141c;border:1px solid #1c2733;padding:8px;border-radius:8px}
+  .feed small{color:var(--muted)}
+  .feed input{width:100%}
+  .feed-actions button{font-size:12px;padding:6px 8px}
+  #toolbar{display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #1c2733;background:#0d141c}
+  #toolbar .stat{color:var(--muted)}
+  #list{padding:8px;display:grid;gap:8px;max-height:calc(100vh - 120px);overflow:auto}
+  .card{background:var(--card);border:1px solid #1b2633;padding:10px;border-radius:12px;display:grid;gap:6px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap}
+  .badge{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid #2a3950;color:#9fb2c4;background:#0b121a}
+  .source{border-color:#375b7a;color:#a9c8e2}
+  .time{border-color:#2d5042;color:#bfead8}
+  .hot{border-color:#5a2b14;color:#ffcfb8;background:#201008}
+  .title{font-weight:700}
+  .title a{color:var(--text);text-decoration:none}
+  .title a:hover{text-decoration:underline}
+  .highlight{background:linear-gradient(90deg,rgba(87,166,255,.15),rgba(53,201,144,.15));border-color:#295a82}
+  .row{display:flex;gap:8px}
+  .row input{flex:1}
+  .kbd{padding:2px 6px;border-radius:6px;border:1px solid #2a3950;background:#0b121a;color:#b8c7d6;font-size:12px}
+  footer{padding:10px 12px;color:var(--muted)}
+  .tiny{font-size:12px;color:#99aabb}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">MINI BLOOMBERG<span class="tiny">.html</span> <small>— real-time multi-source headlines</small></div>
+    <div class="pill"><b>/</b> focus search</div>
+    <div class="pill"><b>R</b> refresh</div>
+    <div class="pill"><b>A</b> add feed</div>
+    <div class="pill"><b>?</b> help</div>
+    <div class="pill"><b>1</b> all <b>2</b> watchlist</div>
+  </header>
+
+  <main>
+    <section class="panel" id="left">
+      <h3>Sources</h3>
+      <div id="feeds"></div>
+      <div id="toolbar">
+        <div class="row" style="width:100%">
+          <input id="newFeedUrl" placeholder="Add RSS/Atom URL…" />
+          <button id="addFeedBtn" class="primary">Add</button>
+        </div>
+        <div class="row" style="width:100%">
+          <input id="search" placeholder="Filter: e.g. AAPL OR oil OR rate hike" />
+          <button id="clearBtn">Clear</button>
+        </div>
+        <div class="row" style="width:100%">
+          <input id="watchlistInput" placeholder="Watchlist keywords (comma-sep), e.g. AAPL, NVDA, CPI" />
+          <button id="saveWatchlist">Save</button>
+        </div>
+        <div class="stat" id="stats">—</div>
+      </div>
+      <h3>Watchlist View</h3>
+      <div id="watchlist" class="tiny" style="padding-bottom:12px">
+        <div>Only headlines matching your watchlist will appear when pressing <span class="kbd">2</span>.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3 id="viewTitle">Headlines — All Sources</h3>
+      <div id="list"></div>
+      <footer class="tiny">
+        Using public RSS via multiple proxies. Runs locally in your browser.
+      </footer>
+    </section>
+  </main>
+
+<script>
+const DEFAULT_FEEDS = [
+  {name:"Reuters Top News", url:"https://feeds.reuters.com/reuters/topNews"},
+  {name:"Reuters Business", url:"https://feeds.reuters.com/reuters/businessNews"},
+  {name:"BBC Business", url:"https://feeds.bbci.co.uk/news/business/rss.xml"},
+  {name:"CNBC Top News", url:"https://www.cnbc.com/id/100003114/device/rss/rss.html"},
+  {name:"AP Top News (Atom)", url:"https://apnews.com/apf-topnews?format=atom"},
+];
+
+const state = {
+  feeds: JSON.parse(localStorage.getItem("feeds")||"null") || DEFAULT_FEEDS,
+  items: [],
+  lastRefresh: 0,
+  mode: "all",
+  query: "",
+  watchlist: JSON.parse(localStorage.getItem("watchlist")||"[]"),
+  refreshIntervalMs: 60000,
+  timer: null
+};
+
+const el = s=>document.querySelector(s);
+const listEl = el("#list");
+const feedsEl = el("#feeds");
+const statsEl = el("#stats");
+const viewTitleEl = el("#viewTitle");
+const searchEl = el("#search");
+const watchlistInput = el("#watchlistInput");
+
+function saveFeeds(){ localStorage.setItem("feeds", JSON.stringify(state.feeds)); renderFeeds(); }
+function saveWatchlist(){
+  const words = watchlistInput.value.split(",").map(s=>s.trim()).filter(Boolean);
+  state.watchlist = words;
+  localStorage.setItem("watchlist", JSON.stringify(words));
+  renderWatchlist(); renderList();
+}
+function renderWatchlist(){
+  const w = state.watchlist;
+  el("#watchlist").innerHTML = w.length? w.map(x=>`<span class="badge">${x}</span>`).join(" ") : "<span class='tiny'>No watchlist keywords yet.</span>";
+}
+function escapeHTML(s){return s.replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+
+// proxies
+const PROXIES = [
+  u => "https://r.jina.ai/http://" + u.replace(/^https?:\/\//,""),
+  u => "https://r.jina.ai/http://r.jina.ai/http://" + u.replace(/^https?:\/\//,""),
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+];
+async function fetchTextWithProxies(url){
+  for(const build of PROXIES){
+    try{
+      const resp = await fetch(build(url), {cache:"no-store"});
+      if(resp.ok) return await resp.text();
+    }catch(e){}
+  }
+  throw new Error("All proxies failed for " + url);
+}
+
+// updated fetchFeed
+async function fetchFeed(url){
+  const xml = await fetchTextWithProxies(url);
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  const isAtom = !!doc.querySelector("feed");
+  const items = [];
+  if(isAtom){
+    doc.querySelectorAll("entry").forEach(e=>{
+      const title=(e.querySelector("title")?.textContent||"").trim();
+      const link=e.querySelector("link")?.getAttribute("href")||(e.querySelector("id")?.textContent||"").trim();
+      const date=(e.querySelector("updated")?.textContent||e.querySelector("published")?.textContent||"").trim();
+      const source=(doc.querySelector("title")?.textContent||new URL(url).host).trim();
+      items.push({title,link,date,source});
+    });
+  } else {
+    doc.querySelectorAll("item").forEach(it=>{
+      const title=(it.querySelector("title")?.textContent||"").trim();
+      const link=(it.querySelector("link")?.textContent||"").trim();
+      const date=(it.querySelector("pubDate")?.textContent||it.querySelector("date")?.textContent||"").trim();
+      const source=(doc.querySelector("channel>title")?.textContent||doc.querySelector("title")?.textContent||new URL(url).host).trim();
+      items.push({title,link,date,source});
+    });
+  }
+  return items;
+}
+
+function normalizeKey(it){
+  const t=(it.title||"").toLowerCase().replace(/[\W_]+/g," ").trim();
+  const l=(it.link||"").toLowerCase().replace(/#.*/,"");
+  return t.slice(0,140)+"|"+l;
+}
+
+async function refresh(){
+  const started=Date.now();
+  listEl.innerHTML="<div class='card'><div>Refreshing…</div></div>";
+  try{
+    const all=await Promise.allSettled(state.feeds.map(f=>fetchFeed(f.url)));
+    const merged=[]; const dedup=new Set();
+    all.forEach((res,i)=>{
+      if(res.status==="fulfilled"){
+        res.value.forEach(item=>{
+          const key=normalizeKey(item);
+          if(!dedup.has(key)){dedup.add(key);merged.push(item);}
+        });
+      } else merged.push({title:`[Feed error] ${state.feeds[i].name}: ${res.reason}`,link:"#",date:new Date().toUTCString(),source:"System"});
+    });
+    merged.forEach(m=>m.ts=isNaN(Date.parse(m.date))?Date.now():Date.parse(m.date));
+    merged.sort((a,b)=>b.ts-a.ts);
+    state.items=merged; state.lastRefresh=Date.now();
+    renderList();
+    statsEl.textContent=`Fetched ${merged.length} unique from ${state.feeds.length} feeds in ${((Date.now()-started)/1000).toFixed(1)}s`;
+  }catch(err){ listEl.innerHTML=`<div class='card'><div>Refresh failed</div><div>${err}</div></div>`;}
+}
+
+function renderFeeds(){
+  feedsEl.innerHTML="";
+  state.feeds.forEach((f,i)=>{
+    const div=document.createElement("div");
+    div.className="feed";
+    div.innerHTML=`<div><strong>${escapeHTML(f.name)}</strong><small>${escapeHTML(f.url)}</small></div><div class='feed-actions'><button onclick='removeFeed(${i})'>Remove</button></div>`;
+    feedsEl.appendChild(div);
+  });
+}
+function removeFeed(i){state.feeds.splice(i,1);saveFeeds();refresh();}
+
+function renderList(){
+  const q=state.query.trim(), w=state.watchlist, mode=state.mode;
+  let items=state.items;
+  if(q){const tokens=parseQuery(q);items=items.filter(it=>matchesQuery(it,tokens));}
+  if(mode==="watchlist"&&w.length){items=items.filter(it=>w.some(v=>it.title.toLowerCase().includes(v.toLowerCase())));}
+  viewTitleEl.textContent=mode==="watchlist"?"Headlines — Watchlist":"Headlines — All Sources";
+  listEl.innerHTML=items.slice(0,500).map(renderCard).join("")||"<div class='card'>No results.</div>";
+}
+
+function renderCard(it){
+  const hot=isHot(it.title);
+  return `<div class='card${hot?" highlight":""}'>
+  <div class='meta'><span class='badge source'>${escapeHTML(it.source)}</span>
+  <span class='badge time'>${new Date(it.ts).toLocaleString()}</span>${hot?"<span class='badge hot'>mover</span>":""}</div>
+  <div class='title'><a href='${it.link}' target='_blank'>${escapeHTML(it.title)}</a></div></div>`;
+}
+function isHot(t=""){return["guidance","earnings","layoffs","deal","buyback","resigns","merger","downgrade"].some(k=>t.toLowerCase().includes(k));}
+function parseQuery(q){const raw=q.split(/\s+/).filter(Boolean),t={must:[],any:[],not:[]};let any=false;for(const r of raw){if(/^or$/i.test(r)){any=true;continue;}if(r.startsWith("-"))t.not.push(r.slice(1).toLowerCase());else if(any)t.any.push(r.toLowerCase());else t.must.push(r.toLowerCase());}return t;}
+function matchesQuery(it,t){const h=(it.title+" "+it.source).toLowerCase();if(t.must.some(v=>!h.includes(v)))return false;if(t.any.length&&!t.any.some(v=>h.includes(v)))return false;if(t.not.some(v=>h.includes(v)))return false;return true;}
+
+function setup(){
+  renderFeeds();renderWatchlist();refresh();
+  state.timer=setInterval(refresh,state.refreshIntervalMs);
+  searchEl.addEventListener("input",e=>{state.query=e.target.value;renderList();});
+  el("#clearBtn").onclick=()=>{searchEl.value="";state.query="";renderList();};
+  el("#addFeedBtn").onclick=()=>{const u=el("#newFeedUrl").value.trim();if(!u)return;const n=prompt("Feed name:",new URL(u).host)||new URL(u).host;state.feeds.push({name:n,url:u});saveFeeds();el("#newFeedUrl").value="";refresh();};
+  el("#saveWatchlist").onclick=saveWatchlist;
+  document.addEventListener("keydown",e=>{
+    if(e.key==="/"&&document.activeElement!==searchEl){e.preventDefault();searchEl.focus();}
+    else if(/^[Rr]$/.test(e.key))refresh();
+    else if(/^[Aa]$/.test(e.key)){const u=prompt("Add feed URL:");if(u){const n=prompt("Name:",new URL(u).host)||new URL(u).host;state.feeds.push({name:n,url:u});saveFeeds();refresh();}}
+    else if(e.key==="1"){state.mode="all";renderList();}
+    else if(e.key==="2"){state.mode="watchlist";renderList();}
+    else if(e.key==="?"){alert("Shortcuts:\n/ focus\nR refresh\nA add feed\n1 all\n2 watchlist\n\nFilter syntax: words=AND, OR, -word=NOT");}
+  });
+  watchlistInput.value=state.watchlist.join(", ");
+}
+window.addEventListener("load",setup);
+</script>
+</body>
+</html>
